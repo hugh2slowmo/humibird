@@ -1,0 +1,24 @@
+[package]
+name = "humibird_tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+humibird_mcp = { path = "../humibird_mcp" }
+anyhow.workspace = true
+futures.workspace = true
+html_to_markdown.workspace = true
+http_client.workspace = true
+humibird_memory = { path = "../humibird_memory" }
+humibird_skills = { path = "../humibird_skills" }
+globset = "0.4"
+ignore = "0.4"
+log = "0.4"
+regex = "1"
+reqwest_client.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

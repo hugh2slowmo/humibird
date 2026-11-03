@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Regenerates crates/humibird/resources/Humibird.icns from icon.png.
+#
+# icon.png is the master: 1024×1024, with the artwork's rounded tile at 824×824
+# centred inside a transparent margin, which is Apple's app-icon grid. It was cut
+# from icon-source.png — the artwork as delivered, whose tile sits in its own soft
+# shadow — because macOS draws the shadow itself. Redo that cut by hand if the
+# artwork is replaced.
+#
+# The .icns is committed, so building the app never needs this; run it only after
+# changing the artwork. It needs nothing but macOS's own `sips` and `iconutil`,
+# so it works over SSH as well as at the desktop.
+
+set -euo pipefail
+
+resources="$(cd "$(dirname "${BASH_SOURCE[0]}")/../crates/humibird/resources" && pwd)"
+master="$resources/icon.png"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+width="$(sips -g pixelWidth "$master" | awk '/pixelWidth/ {print $2}')"
+height="$(sips -g pixelHeight "$master" | awk '/pixelHeight/ {print $2}')"
+[ "$width" = "1024" ] && [ "$height" = "1024" ] || {
+    echo "icon.png has to be 1024x1024, not ${width}x${height}" >&2
+    exit 1
+}
+
+iconset="$work/Humibird.iconset"
+mkdir -p "$iconset"
+for size in 16 32 128 256 512; do
+    sips -z "$size" "$size" "$master" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+    double=$((size * 2))
+    sips -z "$double" "$double" "$master" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+
+iconutil -c icns "$iconset" -o "$resources/Humibird.icns"
+echo "wrote $resources/Humibird.icns"
+
+# The sidebar brand mark is the same tile without the app-icon margin: the UI
+# renders the PNG as it is, so the 824-inside-1024 master would leave the bird
+# in a quarter of its 18px square.
+ui_resources="$(cd "$(dirname "${BASH_SOURCE[0]}")/../crates/humibird_ui/resources" && pwd)"
+sips -c 824 824 --cropOffset 100 100 "$master" --out "$work/mark.png" >/dev/null
+sips -z 96 96 "$work/mark.png" --out "$ui_resources/mark.png" >/dev/null
+echo "wrote $ui_resources/mark.png"

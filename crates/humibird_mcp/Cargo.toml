@@ -1,0 +1,16 @@
+[package]
+name = "humibird_mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/mcp.rs"
+
+[dependencies]
+anyhow.workspace = true
+futures.workspace = true
+http_client.workspace = true
+log = "0.4"
+reqwest_client.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,5 @@
+/target
+.DS_Store
+# A key file dropped at the repository root by mistake. Profiles keep theirs
+# outside the repository; this only exists so a stray one cannot be committed.
+.env

@@ -1,0 +1,28 @@
+[package]
+name = "humibird"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "humibird"
+path = "src/main.rs"
+
+[features]
+# gpui compiles its Metal shaders at build time with Xcode's `metal` tool. On a
+# machine without Xcode's Metal Toolchain component that tool is missing, so this
+# switches to shaders compiled on first launch instead (`runtime_shaders`).
+# script/bundle-mac turns it on by itself when it finds no metal compiler.
+runtime-shaders = ["gpui_platform/runtime_shaders"]
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+humibird_profile = { path = "../humibird_profile" }
+humibird_ui = { path = "../humibird_ui" }
+log = "0.4"
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

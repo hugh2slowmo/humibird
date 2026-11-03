@@ -1,0 +1,48 @@
+[package]
+name = "humibird_ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gpui.workspace = true
+grammars.workspace = true
+humibird_agent = { path = "../humibird_agent" }
+humibird_memory = { path = "../humibird_memory" }
+humibird_profile = { path = "../humibird_profile" }
+humibird_skills = { path = "../humibird_skills" }
+humibird_providers = { path = "../humibird_providers" }
+humibird_store = { path = "../humibird_store" }
+humibird_tools = { path = "../humibird_tools" }
+language.workspace = true
+markdown.workspace = true
+settings.workspace = true
+theme.workspace = true
+theme_settings.workspace = true
+ui.workspace = true
+util.workspace = true
+reqwest_client.workspace = true
+base64.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+log = "0.4"
+unicode-segmentation = "1"
+
+# Only the grammars that show up in agent output. Keep the versions in step
+# with the pinned Zed revision so its highlight queries match the grammar.
+tree-sitter-bash = "0.25.1"
+tree-sitter-json = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-rust = "0.24.2"
+tree-sitter-typescript = { git = "https://github.com/zed-industries/tree-sitter-typescript", rev = "e2c53597d6a5d9cf7bbe8dccde576fe1e46c5899" }
+
+# `markdown` pulls in the mermaid renderer, whose crates must stay on the exact
+# pre-release the Zed revision was built against. Without these pins crates.io
+# resolves the 0.8.0 release, which has an incompatible API.
+merman-core = "=0.8.0-alpha.5"
+merman-render = "=0.8.0-alpha.5"
+
+[dev-dependencies]
+anyhow.workspace = true
+gpui = { workspace = true, features = ["test-support"] }
+tempfile = "3"

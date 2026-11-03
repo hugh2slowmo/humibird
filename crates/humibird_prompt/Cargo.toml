@@ -1,0 +1,9 @@
+[package]
+name = "humibird_prompt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+humibird_memory = { path = "../humibird_memory" }
+humibird_skills = { path = "../humibird_skills" }

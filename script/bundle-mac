@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Builds Humibird.app and an arm64 DMG into target/dmg/.
+#
+# Apple Silicon only for now: the release is built for the host, so a build on an
+# Intel Mac would produce an app that this script then labels arm64.
+#
+# The bundle is signed ad-hoc, which is what arm64 needs to launch at all, but it
+# is not notarized: the first launch has to be allowed by hand.
+
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+
+if [ "$(uname -m)" != "arm64" ]; then
+    echo "script/bundle-mac builds the arm64 release only; run it on an Apple Silicon Mac." >&2
+    exit 1
+fi
+
+version=$(awk '
+    /^\[workspace\.package\]/ { section = 1; next }
+    /^\[/ { section = 0 }
+    section && /^version *=/ { gsub(/["[:space:]]/, "", $3); print $3; exit }
+' Cargo.toml)
+if [ -z "$version" ]; then
+    echo "could not read the workspace version from Cargo.toml" >&2
+    exit 1
+fi
+
+# Monotonic per build, so a newer DMG always sorts after an older one.
+build=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+
+# Xcode 26+ ships the Metal compiler as a separate download. Without it gpui's
+# shader build script fails, so fall back to shaders compiled at launch — slower
+# to start, but no toolchain needed. `xcodebuild -downloadComponent
+# MetalToolchain` restores the faster default.
+if xcrun --sdk macosx metal --version >/dev/null 2>&1; then
+    echo "Building humibird $version ($build)"
+    cargo build --release --package humibird
+else
+    echo "No Metal compiler (xcodebuild -downloadComponent MetalToolchain);" \
+        "compiling shaders at first launch instead."
+    echo "Building humibird $version ($build)"
+    cargo build --release --package humibird --features humibird/runtime-shaders
+fi
+
+resources="$root/crates/humibird/resources"
+dist="$root/target/dmg"
+app="$dist/Humibird.app"
+
+rm -rf "$dist"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+
+cp "$root/target/release/humibird" "$app/Contents/MacOS/humibird"
+sed -e "s/@VERSION@/$version/" -e "s/@BUILD@/$build/" \
+    "$resources/Info.plist" > "$app/Contents/Info.plist"
+cp "$resources/Humibird.icns" "$app/Contents/Resources/Humibird.icns"
+cp "$root/LICENSE" "$app/Contents/Resources/LICENSE"
+
+# arm64 refuses to run an unsigned binary, and signing the bundle is what binds
+# Info.plist to the code; ad-hoc is enough for both.
+codesign --force --sign - "$app" >/dev/null
+
+plutil -lint "$app/Contents/Info.plist" >/dev/null
+codesign --verify --deep --strict "$app"
+
+stage="$dist/stage"
+mkdir -p "$stage"
+cp -R "$app" "$stage/Humibird.app"
+ln -s /Applications "$stage/Applications"
+
+dmg="$dist/Humibird-$version-arm64.dmg"
+hdiutil create -quiet -volname Humibird -srcfolder "$stage" -ov -format UDZO "$dmg"
+rm -rf "$stage"
+
+echo "Built $dmg"
+echo "Not notarized: first launch is System Settings → Privacy & Security → Open Anyway."

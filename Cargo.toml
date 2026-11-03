@@ -1,0 +1,71 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/humibird",
+    "crates/humibird_agent",
+    "crates/humibird_memory",
+    "crates/humibird_mcp",
+    "crates/humibird_profile",
+    "crates/humibird_prompt",
+    "crates/humibird_providers",
+    "crates/humibird_skills",
+    "crates/humibird_store",
+    "crates/humibird_tools",
+    "crates/humibird_ui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+rust-version = "1.98"
+
+[workspace.dependencies]
+# Keep every Zed crate on one revision so the crates cannot drift apart.
+gpui = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+# Turns the pages `fetch` downloads into Markdown. Zed's own converter, so the
+# `fetch` tool reads a page the way Zed's does; it needs no crate that is not
+# already in the lock file through `markdown`.
+html_to_markdown = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307", features = [
+    "font-kit",
+] }
+grammars = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+language = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+markdown = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+settings = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+sqlez = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+theme = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+theme_settings = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+ui = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+# Embeds Zed's settings assets in debug builds. `SettingsStore::new` loads
+# `default_semantic_token_rules.json`, which otherwise resolves against the
+# checkout root at runtime and panics outside the Zed repository.
+util = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307", features = [
+    "debug-embed",
+] }
+http_client = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+reqwest_client = { git = "https://github.com/zed-industries/zed", rev = "2eb2928c15073b30d525b516fd3f2f79bf703307" }
+
+anyhow = "1"
+async-stream = "0.3"
+base64 = "0.22"
+futures = "0.3"
+libsqlite3-sys = { version = "0.30.1", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+
+[profile.dev]
+incremental = true
+
+[patch.crates-io]
+# Zed's workspace patches these crates; a downstream workspace has to repeat the
+# patches it relies on. `util` calls `adopt_raw_pid`, which only exists in the
+# async-process fork, and GPUI's scheduler expects the async-task fork.
+async-process = { git = "https://github.com/zed-industries/async-process.git", rev = "0b6d6713570af61806e1e5cb40e0f757cb93fd9d" }
+async-task = { git = "https://github.com/zed-industries/async-task.git", rev = "015845a19fc31752c02367567d3b8900a406f9da" }
+# Grammar crates depend on the crates.io `tree-sitter-language`, while Zed's
+# `tree-sitter` is a git checkout. Without this patch the two `LanguageFn` types
+# are distinct and no grammar compiles.
+tree-sitter-language = { git = "https://github.com/tree-sitter/tree-sitter", rev = "803c6ebaac27d69e1808b45058482e868d073ceb" }

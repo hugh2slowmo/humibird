@@ -1,0 +1,23 @@
+[package]
+name = "humibird_agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+humibird_mcp = { path = "../humibird_mcp" }
+humibird_memory = { path = "../humibird_memory" }
+humibird_profile = { path = "../humibird_profile" }
+humibird_prompt = { path = "../humibird_prompt" }
+humibird_providers = { path = "../humibird_providers" }
+humibird_skills = { path = "../humibird_skills" }
+humibird_store = { path = "../humibird_store" }
+humibird_tools = { path = "../humibird_tools" }
+chrono = "0.4"
+futures.workspace = true
+log = "0.4"
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
