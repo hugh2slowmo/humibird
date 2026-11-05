@@ -200,7 +200,7 @@ impl Conversation {
             Some(skills.clone()),
         );
 
-        Self {
+        let mut conversation = Self {
             profile,
             workspace,
             model,
@@ -222,7 +222,9 @@ impl Conversation {
             explicit_window: None,
             too_long: false,
             names_thread: scope == Scope::Root,
-        }
+        };
+        conversation.rebuild_tools();
+        conversation
     }
 
     /// The directory the model works in. Frozen: a workspace change is a new
@@ -265,11 +267,20 @@ impl Conversation {
         self.rebuild_tools();
     }
 
-    /// The request's tool list: what this conversation always has, the search tool
-    /// when the profile can call it, and what the context servers offered. A name is
+    /// The request's tool list: built-ins, history recall excluding the active
+    /// session, web search when configured, and context server tools. A name is
     /// offered once — a provider rejects a duplicate function name outright.
     fn rebuild_tools(&mut self) {
         let mut tools: Vec<Arc<dyn Tool>> = self.builtin.iter().cloned().collect();
+        if self.names_thread
+            && let Some(store) = &self.store
+        {
+            tools.push(Arc::new(humibird_tools::SessionSearch::new(
+                store.clone(),
+                self.workspace.clone(),
+                self.session.clone(),
+            )));
+        }
         if let Some(search) = self.search.clone() {
             tools.push(search);
         }
@@ -458,6 +469,74 @@ mod tests {
             None,
             None,
         )
+    }
+
+    #[test]
+    fn history_tool_tracks_the_active_session_without_changing_the_prompt() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(&directory.path().join("history.db")).unwrap();
+        let old = store.create_session("/workspace", None, None).unwrap();
+        let current = store.create_session("/workspace", None, None).unwrap();
+        for id in [&old.id, &current.id] {
+            store
+                .append_message(id, humibird_store::Role::User, "remember SQLite")
+                .unwrap();
+        }
+        let mut conversation =
+            Conversation::new(None, "/workspace", "test", None, Some(store.clone()));
+        let prompt = conversation.system_prompt();
+        let definitions = conversation.definitions().to_vec();
+        let search = |conversation: &Conversation| {
+            let tool = conversation
+                .tools()
+                .iter()
+                .find(|tool| tool.name() == "session_search")
+                .unwrap();
+            serde_json::from_str::<serde_json::Value>(
+                &tool
+                    .run(&serde_json::json!({"operation": "search", "query": "SQLite"}))
+                    .unwrap(),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            search(&conversation)["matches"].as_array().unwrap().len(),
+            2
+        );
+        conversation.attach_session(current.id.clone());
+        assert_eq!(search(&conversation)["matches"][0]["session_id"], old.id);
+        conversation.open(&old);
+        assert_eq!(
+            search(&conversation)["matches"][0]["session_id"],
+            current.id
+        );
+        assert_eq!(conversation.system_prompt(), prompt);
+        assert_eq!(
+            serde_json::to_value(conversation.definitions()).unwrap(),
+            serde_json::to_value(definitions).unwrap()
+        );
+        assert_eq!(
+            conversation
+                .tools()
+                .iter()
+                .filter(|tool| tool.name() == "session_search")
+                .count(),
+            1
+        );
+        let child = Conversation::subagent(None, "/workspace", "test", None, Some(store));
+        assert!(
+            !child
+                .tools()
+                .iter()
+                .any(|tool| tool.name() == "session_search")
+        );
+        let no_store = Conversation::new(None, "/workspace", "test", None, None);
+        assert!(
+            !no_store
+                .tools()
+                .iter()
+                .any(|tool| tool.name() == "session_search")
+        );
     }
 
     #[test]

@@ -16,6 +16,9 @@ use futures::executor::block_on;
 use sqlez::domain::Domain;
 use sqlez::thread_safe_connection::ThreadSafeConnection;
 
+mod search;
+pub use search::{PassageMessage, SearchHit, SearchScope, SessionPassage};
+
 /// Migrations run in order and are never rewritten once shipped; `sqlez` refuses
 /// to start when a stored step no longer matches.
 const MIGRATIONS: &[&str] = &[
@@ -127,6 +130,26 @@ ALTER TABLE sessions ADD COLUMN provider TEXT;
     // and for every row written before this column existed.
     r#"
 ALTER TABLE messages ADD COLUMN attachments TEXT;
+"#,
+    // Search is derived data. Keep the canonical, append-only transcript intact.
+    // Trigrams support substrings in continuous Chinese as well as Latin text.
+    r#"
+CREATE VIRTUAL TABLE message_search USING fts5(message_id UNINDEXED, content, tokenize='trigram');
+
+INSERT INTO message_search (message_id, content)
+SELECT id, content FROM messages WHERE role IN ('user', 'assistant');
+
+CREATE TRIGGER index_searchable_message AFTER INSERT ON messages
+WHEN NEW.role IN ('user', 'assistant')
+BEGIN
+    INSERT INTO message_search (message_id, content) VALUES (NEW.id, NEW.content);
+END;
+
+CREATE TRIGGER remove_searchable_message AFTER DELETE ON messages
+WHEN OLD.role IN ('user', 'assistant')
+BEGIN
+    DELETE FROM message_search WHERE message_id = OLD.id;
+END;
 "#,
 ];
 
@@ -819,6 +842,56 @@ mod tests {
         let path = directory.path().join("sessions/sessions.sqlite3");
         let store = Store::open(&path).expect("open the store");
         (store, path)
+    }
+
+    #[test]
+    fn search_migration_backfills_and_tracks_message_lifecycle() {
+        struct BeforeSearch;
+        impl Domain for BeforeSearch {
+            const NAME: &str = Schema::NAME;
+            const MIGRATIONS: &[&str] = super::MIGRATIONS.split_at(6).0;
+        }
+        let directory = tempfile::tempdir().expect("temp dir");
+        let path = directory.path().join("sessions.sqlite3");
+        let old = block_on(
+            ThreadSafeConnection::builder::<BeforeSearch>(path.to_str().unwrap(), true).build(),
+        )
+        .expect("old schema");
+        block_on(old.write(|connection| {
+            connection.exec("INSERT INTO sessions (id, workspace, created_at, updated_at) VALUES ('old', '/workspace', 0, 0);
+                INSERT INTO messages (id, session_id, seq, role, content, created_at) VALUES
+                ('first', 'old', 1, 'user', '中文会话搜索功能', 0),
+                ('tool', 'old', 2, 'tool', 'hidden tool output', 0);")?()
+        })).expect("old messages");
+        drop(old);
+        let store = Store::open(&path).expect("migrate");
+        let hits = || {
+            store.connection.select::<String>("SELECT message_id FROM message_search WHERE message_search MATCH '会话搜' ORDER BY message_id").unwrap()().unwrap()
+        };
+        assert_eq!(hits(), vec!["first"]);
+        assert_eq!(
+            store
+                .connection
+                .select::<i64>("SELECT count(*) FROM message_search")
+                .unwrap()()
+            .unwrap(),
+            vec![1]
+        );
+        let added = store
+            .append_message("old", Role::Assistant, "现在支持会话搜索")
+            .expect("append");
+        assert_eq!(hits().len(), 2);
+        assert!(hits().contains(&added.id));
+        store.delete_thread("old").expect("delete");
+        assert!(hits().is_empty());
+        drop(store);
+        assert!(
+            Store::open(&path)
+                .expect("reopen")
+                .messages("old")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

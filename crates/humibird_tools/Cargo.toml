@@ -12,6 +12,7 @@ html_to_markdown.workspace = true
 http_client.workspace = true
 humibird_memory = { path = "../humibird_memory" }
 humibird_skills = { path = "../humibird_skills" }
+humibird_store = { path = "../humibird_store" }
 globset = "0.4"
 ignore = "0.4"
 log = "0.4"

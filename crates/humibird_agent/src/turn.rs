@@ -920,6 +920,82 @@ mod tests {
     }
 
     #[test]
+    fn history_search_and_read_return_passages_to_the_model() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = humibird_store::Store::open(&directory.path().join("history.db")).unwrap();
+        let old = store.create_session("/workspace", None, None).unwrap();
+        store
+            .append_message(&old.id, humibird_store::Role::User, "SQLite search design")
+            .unwrap();
+        store
+            .append_message(
+                &old.id,
+                humibird_store::Role::Assistant,
+                "We chose FTS5 with trigram indexing.",
+            )
+            .unwrap();
+        let current = store.create_session("/workspace", None, None).unwrap();
+        store.rename_session(&current.id, "Recall history").unwrap();
+        let (provider, requests) = Scripted::new(vec![
+            vec![
+                call(
+                    "find",
+                    "session_search",
+                    serde_json::json!({"operation": "search", "query": "SQLite"}),
+                ),
+                wants_tools(),
+            ],
+            vec![
+                call(
+                    "expand",
+                    "session_search",
+                    serde_json::json!({"operation": "read", "session_id": old.id, "seq": 1}),
+                ),
+                wants_tools(),
+            ],
+            vec![text("Previously we chose FTS5."), finished()],
+        ]);
+        let mut conversation =
+            crate::Conversation::new(None, "/workspace", "test", Some(provider), Some(store));
+        conversation.attach_session(current.id);
+        conversation.submit("What did we decide before?", &[]);
+        let prompt = conversation.system_prompt();
+        let mut host = TestHost::new();
+        let outcome = block_on(
+            conversation
+                .start_turn(HashSet::new())
+                .unwrap()
+                .run(&mut host, &Inline),
+        );
+        let TurnOutcome::Done { calls, reply, .. } = outcome else {
+            panic!("turn failed")
+        };
+        assert_eq!(reply, "Previously we chose FTS5.");
+        assert_eq!(calls.len(), 2);
+        assert!(calls.iter().all(|call| !call.failed));
+        assert_eq!(host.approvals, 0);
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        let matches: serde_json::Value =
+            serde_json::from_str(&requests[1].messages.last().unwrap().content).unwrap();
+        assert_eq!(matches["matches"][0]["session_id"], old.id);
+        assert!(
+            requests[2]
+                .messages
+                .last()
+                .unwrap()
+                .content
+                .contains("We chose FTS5")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request.messages[0].content == prompt)
+        );
+        assert_eq!(conversation.system_prompt(), prompt);
+    }
+
+    #[test]
     fn a_tool_round_runs_the_call_and_asks_the_model_again() {
         let (tool, runs) = Counted::counted(false);
         let (run, requests) = turn(

@@ -3332,6 +3332,7 @@ dependencies = [
  "humibird_mcp",
  "humibird_memory",
  "humibird_skills",
+ "humibird_store",
  "ignore",
  "log",
  "regex",

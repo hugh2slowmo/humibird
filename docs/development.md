@@ -108,7 +108,7 @@ are there.
 | `humibird_agent` | the conversation, the turn loop, events, compaction |
 | `humibird_prompt` | system-prompt assembly; pure, no I/O |
 | `humibird_providers` | chat types, SSE decoders, provider presets and adapters |
-| `humibird_tools` | the fourteen tools and the workspace boundary |
+| `humibird_tools` | built-in tools and the workspace boundary |
 | `humibird_mcp` | the context server (MCP) client: stdio child processes and streamable HTTP, JSON-RPC both ways |
 | `humibird_memory` | the two curated memory files |
 | `humibird_skills` | skill import and the `SKILL.md` index |

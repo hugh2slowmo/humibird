@@ -27,6 +27,13 @@ usable, the first line of your message stands in. Hovering a row shows a delete
 control: the first press asks, the second removes the thread and everything its
 subagents stored. There is no undo.
 
+The agent can recall earlier conversations with `session_search` when you ask
+about past discussions or decisions. It searches user and assistant message
+bodies in the current workspace, then reads a bounded passage around a match.
+It can explicitly include other workspaces in the same profile. The current
+conversation, subagent sessions, attachments, and tool output are excluded.
+Recalled excerpts are historical reference data and may be outdated.
+
 ## Providers and keys
 
 | Provider | `[provider] id` | Key variable | Notes |

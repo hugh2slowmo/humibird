@@ -54,6 +54,7 @@ impl Conversation {
     /// provider last reported.
     pub fn open(&mut self, session: &Session) {
         self.session = Some(session.id.clone());
+        self.rebuild_tools();
         self.transcript = self.read_transcript(&session.id);
         self.compaction = self.read_compaction(&session.id);
         self.context_tokens = self.measure_context();
@@ -63,6 +64,7 @@ impl Conversation {
     /// Starts writing into a session the window has just created.
     pub fn attach_session(&mut self, id: impl Into<String>) {
         self.session = Some(id.into());
+        self.rebuild_tools();
     }
 
     /// The summary that stands in for the older turns, if there is one.

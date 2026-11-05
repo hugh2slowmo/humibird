@@ -24,9 +24,13 @@ There are no supported releases yet; fixes land on the default branch.
   workspace.
 - **Running without asking.** A mutating tool or `terminal` call that executes
   without the approval it requires, or a denial that the model reads as success.
-- **Reading secrets.** Reaching the profile's `.env` or session database through
-  a tool, or writing a key into the transcript, a log, or a request it does not
-  belong to.
+- **Reading secrets.** Reaching the profile's `.env` or raw session database
+  through a file or terminal tool, or writing a key into the transcript, a log,
+  or a request it does not belong to. The `session_search` tool intentionally
+  exposes bounded user/assistant conversation excerpts from the current profile.
+  It defaults to the current workspace; other workspaces require an explicit
+  `all_workspaces` argument. Access to other profiles, the active session,
+  subagent sessions, attachments, or tool output through this tool is a bug.
 - **Injection that acts on its own.** Fetched content is labelled as data and
   every mutating call still waits for a person; a case where injected text gets
   a tool to change something without a prompt is a bug.

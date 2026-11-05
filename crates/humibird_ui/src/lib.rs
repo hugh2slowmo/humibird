@@ -7262,7 +7262,7 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            ["fetch", "memory", "ask_user", "delegate"],
+            ["fetch", "memory", "ask_user", "delegate", "session_search"],
             "only the tools that do not touch the workspace survive"
         );
     }
@@ -7479,7 +7479,8 @@ mod tests {
             .iter()
             .map(|tool| tool.name.as_str())
             .collect();
-        assert_eq!(names.len(), 13, "the tools are offered: {names:?}");
+        assert_eq!(names.len(), 14, "the tools are offered: {names:?}");
+        assert!(names.contains(&"session_search"), "{names:?}");
         assert!(names.contains(&"memory"), "{names:?}");
         assert!(names.contains(&"ask_user"), "{names:?}");
         assert!(names.contains(&"delegate"), "{names:?}");
