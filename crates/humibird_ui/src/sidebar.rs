@@ -2,10 +2,13 @@ use gpui::{
     AnyElement, Context, FontWeight, Image, ImageFormat, IntoElement, MouseButton, MouseDownEvent,
     ParentElement, Styled, div, img, prelude::*, px, rgb,
 };
+use gpui::{HighlightStyle, StyledText};
 use humibird_store::Session;
+use std::ops::Range;
+use std::path::Path;
 use std::sync::Arc;
 
-use crate::{HumibirdRoot, Palette};
+use crate::{HumibirdRoot, Palette, TextInput};
 
 /// Which rows the list should draw differently: the open thread, the one asking
 /// whether to delete, and the one under the pointer, which is the only row whose
@@ -16,28 +19,87 @@ pub struct Rows<'a> {
     pub hovered: Option<&'a str>,
 }
 
+/// Continuous substring matching, like Zed's thread archive. Byte ranges stay
+/// on character boundaries so Chinese text can also be highlighted safely.
+fn match_range(text: &str, query: &str) -> Option<Range<usize>> {
+    if query.is_empty() {
+        return Some(0..0);
+    }
+    let query: Vec<_> = query.chars().collect();
+    let chars: Vec<_> = text.char_indices().collect();
+    chars.windows(query.len()).find_map(|window| {
+        window
+            .iter()
+            .zip(&query)
+            .all(|((_, actual), expected)| actual.eq_ignore_ascii_case(expected))
+            .then(|| {
+                let (last, ch) = window[window.len() - 1];
+                window[0].0..last + ch.len_utf8()
+            })
+    })
+}
+
+fn matches_session(session: &Session, query: &str) -> bool {
+    match_range(session.title.as_deref().unwrap_or("New thread"), query).is_some()
+        || Path::new(&session.workspace)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| match_range(name, query).is_some())
+}
+
+fn highlighted_text(text: String, query: &str, theme: Palette) -> StyledText {
+    let range = match_range(&text, query).filter(|range| !range.is_empty());
+    StyledText::new(text).with_highlights(range.map(|range| {
+        (
+            range,
+            HighlightStyle {
+                color: Some(rgb(theme.text).into()),
+                font_weight: Some(FontWeight::BOLD),
+                ..Default::default()
+            },
+        )
+    }))
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    #[test]
+    fn matches_contiguous_text_and_returns_utf8_ranges() {
+        assert_eq!(match_range("Build GPUI search", "gpui"), Some(6..10));
+        assert_eq!(match_range("会话搜索功能", "搜索"), Some(6..12));
+        assert_eq!(match_range("Build GPUI search", "bgs"), None);
+        assert_eq!(match_range("", "longer"), None);
+        assert_eq!(match_range("anything", ""), Some(0..0));
+    }
+}
+
 /// The thread list. Threads are grouped by whether they belong to the workspace
 /// this window is working in; a thread from elsewhere is shown with its
 /// workspace and opening it switches to that workspace.
 pub fn render(
     sessions: &[Session],
+    search: gpui::Entity<TextInput>,
     rows: Rows<'_>,
     workspace: &str,
     theme: Palette,
     cx: &mut Context<HumibirdRoot>,
 ) -> impl IntoElement {
+    let query = search.read(cx).value().trim().to_owned();
     let now = now_millis();
     let (here, elsewhere): (Vec<&Session>, Vec<&Session>) = sessions
         .iter()
+        .filter(|session| matches_session(session, &query))
         .partition(|session| session.workspace == workspace);
 
     let here_rows: Vec<AnyElement> = here
         .iter()
-        .map(|session| thread_row(session, &rows, now, theme, cx).into_any_element())
+        .map(|session| thread_row(session, &rows, &query, now, theme, cx).into_any_element())
         .collect();
     let elsewhere_rows: Vec<AnyElement> = elsewhere
         .iter()
-        .map(|session| thread_row(session, &rows, now, theme, cx).into_any_element())
+        .map(|session| thread_row(session, &rows, &query, now, theme, cx).into_any_element())
         .collect();
 
     div()
@@ -55,10 +117,49 @@ pub fn render(
         .pb(px(10.))
         .child(brand())
         .child(new_thread_row(theme, cx))
+        .child(
+            div()
+                .id("session-search")
+                .debug_selector(|| "session-search".into())
+                .mx(px(14.))
+                .mt(px(10.))
+                .px(px(8.))
+                .py(px(6.))
+                .rounded_md()
+                .border_1()
+                .border_color(rgb(theme.border))
+                .text_size(px(12.))
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                    if event.keystroke.key == "escape" {
+                        this.session_search
+                            .update(cx, |input, cx| input.clear(window, cx));
+                        cx.stop_propagation();
+                    }
+                }))
+                .child(div().flex_1().min_w_0().child(search))
+                .when(!query.is_empty(), |this| {
+                    this.child(
+                        div()
+                            .id("clear-session-search")
+                            .debug_selector(|| "clear-session-search".into())
+                            .cursor_pointer()
+                            .child("×")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.session_search
+                                    .update(cx, |input, cx| input.clear(window, cx));
+                            })),
+                    )
+                }),
+        )
         .child(section_label("This workspace", "threads-here", theme))
         .when(here.is_empty(), |this| {
             this.child(empty_row(
-                if sessions.is_empty() {
+                if !query.is_empty() && elsewhere.is_empty() {
+                    "No threads match your search."
+                } else if sessions.is_empty() {
                     "Nothing yet. Send a message to start one."
                 } else {
                     "No threads in this workspace yet."
@@ -167,6 +268,7 @@ fn empty_row(text: &'static str, theme: Palette) -> impl IntoElement {
 fn thread_row(
     session: &Session,
     rows: &Rows<'_>,
+    query: &str,
     now: i64,
     theme: Palette,
     cx: &mut Context<HumibirdRoot>,
@@ -185,6 +287,8 @@ fn thread_row(
         .unwrap_or_else(|| "New thread".to_owned());
     let preview = crate::display_workspace(&session.workspace);
     let age = relative_age(session.updated_at, now);
+    let title = highlighted_text(title, query, theme);
+    let preview = highlighted_text(preview, query, theme);
 
     let open_id = id.clone();
     let delete_id = id.clone();
@@ -229,11 +333,8 @@ fn thread_row(
                             theme.text_muted
                         }))
                         .truncate()
-                        .child(if confirming {
-                            "Delete this thread?".to_owned()
-                        } else {
-                            preview
-                        }),
+                        .when(confirming, |this| this.child("Delete this thread?"))
+                        .when(!confirming, |this| this.child(preview)),
                 ),
         )
         // The age and the delete control share one fixed box, so revealing the

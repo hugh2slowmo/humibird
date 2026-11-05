@@ -16,10 +16,11 @@ humibird is a GPUI desktop agent.
   update in the same commit. If a refactor is a prerequisite, commit it
   separately, verified on its own.
 - Commit subject: imperative, prefixed with the crate or area
-  (`humibird_store: reject out-of-order message seqs`). The body says what was
-  verified and how to reproduce it.
+  (`humibird_ui: add session search`). Keep commit messages concise and describe
+  only the feature or behavior change. Omit implementation details, verification
+  commands, test counts, and test coverage descriptions. A body is optional.
 - Never commit unverified work as done. If something cannot be verified yet, say
-  so in the commit body and keep it isolated.
+  so in the handoff to the user and keep it isolated.
 
 ### Delegation
 
@@ -77,5 +78,6 @@ cargo clippy --all-targets -- -D warnings
 cargo test -p <crate>
 ```
 
-UI work adds a GPUI test or an explicit manual check described in the commit
-body. A build alone is not verification.
+UI work adds a GPUI test or an explicit manual check. Report verification results
+and any manual checks in the handoff to the user, not in the commit message.
+A build alone is not verification.

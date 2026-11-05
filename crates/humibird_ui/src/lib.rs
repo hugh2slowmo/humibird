@@ -447,6 +447,7 @@ pub struct HumibirdRoot {
     /// what keeps the control from being clickable blind.
     hovered_thread: Option<String>,
     sessions: Vec<Session>,
+    session_search: Entity<TextInput>,
     session: Option<Session>,
     turns: Vec<Turn>,
     /// Models each provider named itself, keyed by provider id, on top of its preset
@@ -472,6 +473,7 @@ pub struct HumibirdRoot {
     scroll_handle: ScrollHandle,
     _composer_subscription: Subscription,
     _answer_subscription: Subscription,
+    _session_search_subscription: Subscription,
 }
 
 impl HumibirdRoot {
@@ -551,6 +553,15 @@ impl HumibirdRoot {
             },
         );
         let answer_input = cx.new(|cx| TextInput::new("Type an answer", cx));
+        let session_search = cx.new(|cx| TextInput::new("Search threads…", cx));
+        let _session_search_subscription =
+            cx.subscribe(&session_search, |this, _, event: &TextInputEvent, cx| {
+                if matches!(event, TextInputEvent::Changed) {
+                    this.hovered_thread = None;
+                    this.pending_delete = None;
+                    cx.notify();
+                }
+            });
         let _answer_subscription =
             cx.subscribe(&answer_input, |this, _input, event: &TextInputEvent, cx| {
                 if matches!(event, TextInputEvent::Submit) {
@@ -670,6 +681,7 @@ impl HumibirdRoot {
             pending_delete: None,
             hovered_thread: None,
             sessions,
+            session_search,
             session,
             turns,
             discovered,
@@ -682,6 +694,7 @@ impl HumibirdRoot {
             scroll_handle: ScrollHandle::new(),
             _composer_subscription,
             _answer_subscription,
+            _session_search_subscription,
         };
         root.start_context_servers(cx);
         root
@@ -2480,6 +2493,7 @@ impl Render for HumibirdRoot {
             )
             .child(sidebar::render(
                 &self.sessions,
+                self.session_search.clone(),
                 sidebar::Rows {
                     active: self.session.as_ref().map(|session| session.id.as_str()),
                     confirming: self.pending_delete.as_deref(),
@@ -7589,6 +7603,107 @@ mod tests {
         assert_eq!(
             turns,
             vec![("remember me".to_owned(), "remembered".to_owned())]
+        );
+    }
+
+    #[gpui::test]
+    fn searching_threads_matches_titles_and_workspace_names(cx: &mut TestAppContext) {
+        let (directory, workspace) = temp_workspace();
+        let profile = Profile::at(directory.path().join("profile"));
+        let other_workspace = directory.path().join("search-project");
+        std::fs::create_dir_all(&other_workspace).expect("other workspace");
+        let store = Store::open(&profile.database_path()).expect("store");
+        let other = store
+            .create_session(
+                &other_workspace.to_string_lossy(),
+                Some("deepseek"),
+                Some(DEFAULT_MODEL),
+            )
+            .expect("other thread");
+        store
+            .rename_session(&other.id, "会话搜索 GPUI")
+            .expect("title");
+        store
+            .append_message(&other.id, Role::User, "body-only-needle")
+            .expect("message");
+        let current = store
+            .create_session(
+                &workspace.to_string_lossy(),
+                Some("deepseek"),
+                Some(DEFAULT_MODEL),
+            )
+            .expect("current thread");
+        store
+            .rename_session(&current.id, "Unrelated title")
+            .expect("title");
+        let (provider, _) = scripted(Vec::new(), vec![finished()]);
+        let (window, mut cx) =
+            open_window_in_workspace(cx, Some(profile), Ok(provider), &workspace);
+        let root = window.root(&mut cx).expect("root");
+        cx.update(|_, _| {});
+        let search_bounds = cx.debug_bounds("session-search").expect("search field");
+        cx.simulate_click(search_bounds.center(), Modifiers::default());
+        cx.simulate_input("搜索 gpui");
+        cx.update(|_, _| {});
+        assert!(
+            cx.debug_bounds(selector(format!("thread-{}", other.id)))
+                .is_some()
+        );
+        assert!(
+            cx.debug_bounds(selector(format!("thread-{}", current.id)))
+                .is_none()
+        );
+        // Filtering never switches the active conversation.
+        assert_eq!(
+            root.read_with(&cx, |root, _| root.session.as_ref().unwrap().id.clone()),
+            current.id
+        );
+        cx.simulate_keystrokes("cmd-a");
+        cx.simulate_input("SEARCH-PROJECT");
+        cx.update(|_, _| {});
+        let result = cx
+            .debug_bounds(selector(format!("thread-{}", other.id)))
+            .expect("workspace match");
+        cx.simulate_click(result.center(), Modifiers::default());
+        assert_eq!(
+            root.read_with(&cx, |root, _| root.session.as_ref().unwrap().id.clone()),
+            other.id
+        );
+        // A new search in the same field does not match stored message bodies.
+        let search_bounds = cx.debug_bounds("session-search").unwrap();
+        cx.simulate_click(search_bounds.center(), Modifiers::default());
+        cx.simulate_keystrokes("cmd-a");
+        cx.simulate_input("body-only-needle");
+        cx.update(|_, _| {});
+        assert!(
+            cx.debug_bounds(selector(format!("thread-{}", other.id)))
+                .is_none()
+        );
+        assert!(cx.debug_bounds("threads-empty").is_some());
+        let clear = cx
+            .debug_bounds("clear-session-search")
+            .expect("clear button");
+        cx.simulate_click(clear.center(), Modifiers::default());
+        cx.update(|_, _| {});
+        assert!(
+            cx.debug_bounds(selector(format!("thread-{}", other.id)))
+                .is_some()
+        );
+        assert!(
+            cx.debug_bounds(selector(format!("thread-{}", current.id)))
+                .is_some()
+        );
+        cx.simulate_click(search_bounds.center(), Modifiers::default());
+        cx.simulate_input("no-match");
+        cx.simulate_keystrokes("escape");
+        cx.update(|_, _| {});
+        assert_eq!(
+            root.read_with(&cx, |root, cx| root
+                .session_search
+                .read(cx)
+                .value()
+                .to_owned()),
+            ""
         );
     }
 
